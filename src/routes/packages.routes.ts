@@ -5,6 +5,7 @@ import {
   createPackage,
   trackPackage,
   listPackages,
+  updateStatus,
 } from '../controllers/packages.controller';
 
 const router = Router();
@@ -22,11 +23,13 @@ router.use(authMiddleware);
 // GET  /api/packages  — ADMIN: their company | COURIER: assigned | CUSTOMER: theirs
 router.get('/', listPackages);
 
-// POST /api/packages  — ADMIN only
+// POST  /api/packages  — ADMIN only
 router.post('/', requireRoles('ADMIN'), createPackage);
 
+// PATCH /api/packages/:id/status — ADMIN or COURIER (CUSTOMER blocked)
+router.patch('/:id/status', requireRoles('ADMIN', 'COURIER'), updateStatus);
+
 // Future routes:
-// PATCH /api/packages/:id/status — ADMIN, COURIER
 // GET   /api/packages/:id        — ADMIN, COURIER, CUSTOMER
 
 export default router;
