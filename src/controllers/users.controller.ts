@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { queryOne } from '../helpers/db.helper';
+import { query, queryOne } from '../helpers/db.helper';
 import { User } from '../types/entities';
 import { AppError } from '../middlewares/error.middleware';
 
@@ -42,6 +42,53 @@ export async function getMe(
     res.status(200).json({
       status: 'success',
       user,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /api/users
+ * Returns list of users for the same company.
+ * Optional query param: ?role=COURIER | CUSTOMER | ADMIN
+ * Requires: authMiddleware + ADMIN role.
+ */
+export async function getUsers(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { companyId } = req.user!;
+    const { role } = req.query;
+
+    const params: unknown[] = [companyId];
+    let queryStr = `
+      SELECT
+        id,
+        first_name,
+        last_name,
+        email,
+        role,
+        phone_number
+      FROM users
+      WHERE company_id = $1
+    `;
+
+    if (role && typeof role === 'string') {
+      params.push(role);
+      queryStr += ` AND role = $2`;
+    }
+
+    queryStr += ` ORDER BY first_name ASC`;
+
+    const records = await query<Pick<User, 'id' | 'first_name' | 'last_name' | 'email' | 'role' | 'phone_number'>>(queryStr, params);
+
+    res.status(200).json({
+      status: 'success',
+      count: records.length,
+      users: records,
     });
   } catch (error) {
     next(error);
