@@ -36,7 +36,9 @@ app.use(errorMiddleware);
 // ─────────────────────────────────────────────
 async function bootstrap(): Promise<void> {
   await testConnection();
-  app.listen(env.PORT, () => {
+  // '0.0.0.0' binds to all network interfaces — required by Render and most cloud hosts.
+  // Without it, the server only listens on localhost and Render never detects it as ready.
+  app.listen(env.PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${env.PORT} [${env.NODE_ENV}]`);
   });
 }
