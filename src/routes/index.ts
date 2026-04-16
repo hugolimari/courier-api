@@ -2,6 +2,7 @@ import { Router } from 'express';
 import authRoutes from './auth.routes';
 import usersRoutes from './users.routes';
 import packagesRoutes from './packages.routes';
+import trackingRoutes from './tracking.routes';
 
 const router = Router();
 
@@ -14,5 +15,7 @@ router.use('/users', usersRoutes);
 // Packages routes — mixed: /track/:id is public, rest are protected
 router.use('/packages', packagesRoutes);
 
-export default router;
+// Tracking routes — COURIER only
+router.use('/tracking', trackingRoutes);
 
+export default router;
