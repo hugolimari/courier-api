@@ -7,6 +7,7 @@ import {
   listPackages,
   updateStatus,
 } from '../controllers/packages.controller';
+import { deliverPackage } from '../controllers/delivery.controller';
 
 const router = Router();
 
@@ -28,6 +29,9 @@ router.post('/', requireRoles('ADMIN'), createPackage);
 
 // PATCH /api/packages/:id/status — ADMIN or COURIER (CUSTOMER blocked)
 router.patch('/:id/status', requireRoles('ADMIN', 'COURIER'), updateStatus);
+
+// POST  /api/packages/:id/deliver — ADMIN or COURIER marks delivery + creates proof
+router.post('/:id/deliver', requireRoles('ADMIN', 'COURIER'), deliverPackage);
 
 // Future routes:
 // GET   /api/packages/:id        — ADMIN, COURIER, CUSTOMER
