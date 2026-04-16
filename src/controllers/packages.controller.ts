@@ -71,6 +71,28 @@ interface TrackingRow {
   courier_last_update: Date | null;
 }
 
+interface ListPackageRow {
+  id: string;
+  company_id: string;
+  tracking_number: string;
+  customer_id: string;
+  courier_id: string | null;
+  destination_address: string;
+  location_reference: string;
+  destination_point: string;        // GeoJSON
+  status: string;
+  cash_to_collect: number;
+  created_at: Date;
+  updated_at: Date;
+  customer_name: string;            // first_name + last_name from LEFT JOIN
+  courier_name: string | null;      // null if no courier assigned
+}
+
+// Optional query param filter for ?status=...
+const statusFilterSchema = z
+  .enum(['PENDING', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'FAILED', 'CANCELLED'])
+  .optional();
+
 // ─────────────────────────────────────────────
 // Controllers
 // ─────────────────────────────────────────────
@@ -188,10 +210,15 @@ export async function trackPackage(
 
 /**
  * GET /api/packages
+ * GET /api/packages?status=PENDING
+ *
  * Returns packages filtered by the authenticated user's role:
- *   ADMIN   → all packages belonging to their company
- *   COURIER → only packages assigned to them
- *   CUSTOMER→ only packages where they are the sender (customer_id)
+ *   ADMIN    → all packages belonging to their company
+ *   COURIER  → only packages assigned to them
+ *   CUSTOMER → only packages where they are the sender (customer_id)
+ *
+ * Supports optional query param `?status=` to narrow results.
+ * Uses LEFT JOINs with users table to include customer_name and courier_name.
  */
 export async function listPackages(
   req: Request,
@@ -201,46 +228,62 @@ export async function listPackages(
   try {
     const { userId, companyId, role } = req.user!;
 
-    let rows: PackageRow[];
+    // Validate the optional status filter
+    const statusFilter = statusFilterSchema.parse(req.query.status);
 
+    // ── Build the dynamic WHERE clause ──
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    // Role-based security filter (always applied)
     if (role === 'ADMIN') {
-      rows = await query<PackageRow>(
-        `SELECT
-           id, company_id, tracking_number, customer_id, courier_id,
-           destination_address, location_reference,
-           ST_AsGeoJSON(destination_point) AS destination_point,
-           status, cash_to_collect, created_at, updated_at
-         FROM packages
-         WHERE company_id = $1
-         ORDER BY created_at DESC`,
-        [companyId]
-      );
+      conditions.push(`p.company_id = $${paramIndex++}`);
+      params.push(companyId);
     } else if (role === 'COURIER') {
-      rows = await query<PackageRow>(
-        `SELECT
-           id, company_id, tracking_number, customer_id, courier_id,
-           destination_address, location_reference,
-           ST_AsGeoJSON(destination_point) AS destination_point,
-           status, cash_to_collect, created_at, updated_at
-         FROM packages
-         WHERE courier_id = $1
-         ORDER BY created_at DESC`,
-        [userId]
-      );
+      conditions.push(`p.courier_id = $${paramIndex++}`);
+      params.push(userId);
     } else {
       // CUSTOMER — read-only, only their own shipments
-      rows = await query<PackageRow>(
-        `SELECT
-           id, tracking_number,
-           destination_address, location_reference,
-           ST_AsGeoJSON(destination_point) AS destination_point,
-           status, cash_to_collect, created_at, updated_at
-         FROM packages
-         WHERE customer_id = $1
-         ORDER BY created_at DESC`,
-        [userId]
-      );
+      conditions.push(`p.customer_id = $${paramIndex++}`);
+      params.push(userId);
     }
+
+    // Optional status filter
+    if (statusFilter) {
+      conditions.push(`p.status = $${paramIndex++}`);
+      params.push(statusFilter);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const rows = await query<ListPackageRow>(
+      `SELECT
+         p.id,
+         p.company_id,
+         p.tracking_number,
+         p.customer_id,
+         p.courier_id,
+         p.destination_address,
+         p.location_reference,
+         ST_AsGeoJSON(p.destination_point) AS destination_point,
+         p.status,
+         p.cash_to_collect,
+         p.created_at,
+         p.updated_at,
+         CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+         CASE
+           WHEN cr.id IS NOT NULL
+           THEN CONCAT(cr.first_name, ' ', cr.last_name)
+           ELSE NULL
+         END AS courier_name
+       FROM packages p
+       LEFT JOIN users c  ON c.id  = p.customer_id
+       LEFT JOIN users cr ON cr.id = p.courier_id
+       WHERE ${whereClause}
+       ORDER BY p.created_at DESC`,
+      params
+    );
 
     res.status(200).json({
       status: 'success',
